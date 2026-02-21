@@ -2,9 +2,22 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
+
+/*Why is it better to pass the logger through a struct rather than declaring var logger =
+slog.New(...) at the top of the file?*/
+
+/*Answer: Passing the logger through a struct rather than declaring allows Dependency Injection:
+Using a struct allows for easier dependency injection, making it simpler to test your code.
+You can create instances of the struct with different logger configurations for testing purposes without affecting the global state.*/
+
+type application struct {
+	logger *slog.Logger
+}
 
 /* If a handler calls w.Write([]byte("ok"))
 without calling w.WriteHeader() first, what status code
@@ -24,18 +37,6 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		// Wrap the real writer with our custom one, pre-set to 200
-		rw := &responseWriter{w, http.StatusOK}
-		// Pass the wrapped writer to the next handler
-		next.ServeHTTP(rw, r)
-		// The handler has now finished. rw.statusCode holds the real status.
-		log.Printf("%s %s %d %v", r.Method, r.URL.Path, rw.statusCode, time.Since(start))
-	})
 }
 
 /* What do time.Now() and time.Since(start) give you together? */
@@ -61,12 +62,23 @@ so when the handler calls w.WriteHeader(http.StatusNotFound), rw.statusCode will
 /*The middleware is applied once in main, wrapping the entire router. If you have five handlers,
 how many times does each request pass through the middleware?*/
 
-/*
-Answer: Each request will pass through the middleware once. The middleware is applied to the entire router,
+/*Answer: Each request will pass through the middleware once. The middleware is applied to the entire router,
 so regardless of which handler is invoked for a given request, it will go through the middleware exactly one
 time before reaching the specific handler. The middleware acts as a single layer that processes all incoming
-requests before they are routed to their respective handlers.
-*/
+requests before they are routed to their respective handlers.*/
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		// Wrap the real writer with our custom one, pre-set to 200
+		rw := &responseWriter{w, http.StatusOK}
+		// Pass the wrapped writer to the next handler
+		next.ServeHTTP(rw, r)
+		// The handler has now finished. rw.statusCode holds the real status.
+		log.Printf("%s %s %d %v", r.Method, r.URL.Path, rw.statusCode, time.Since(start))
+	})
+}
+
 func main() {
 
 	mux := http.NewServeMux()
@@ -77,6 +89,27 @@ func main() {
 	})
 	logMiddleware := loggingMiddleware(mux)
 
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	app := &application{
+		logger: logger,
+	}
+
+	/*Why is app a pointer (&application{}) rather than a value?*/
+
+	/*Answer: app is a pointer to an application struct rather than a value because it allows
+	for more efficient memory usage and easier modification of the struct's fields.
+	Using a pointer means that when we pass app around in our code, we are passing a reference
+	to the same underlying data rather than creating copies of the struct.*/
+
+	/*How does each handler method access the logger — what does the receiver give you?*/
+
+	/*Answer: Each handler method can access the logger through the application struct's receiver.
+	The receiver allows the handler methods to access the fields of the application struct, including the logger.*/
+
+	/*If you later added a second dependency (e.g. a database), where exactly would you add it?*/
+
+	/*Answer: If I later added a second dependency, such as a database, I would add it as a field in the application struct.
+	This way, all dependencies are centralized within the application struct, making it easier to manage and pass around as needed.*/
 	err := http.ListenAndServe(":4000", logMiddleware)
 	log.Printf("Server started on http://localhost:4000")
 
