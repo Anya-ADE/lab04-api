@@ -29,6 +29,17 @@ you pre-set it to http.StatusOK? */
 the client receives a status code of 200 OK. If the pre-set rw.statusCode is set to
 http.StatusOK, it will hold the value 200.*/
 
+type responseWriter struct {
+	http.ResponseWriter     // embed the real writer
+	statusCode          int // captured status code
+}
+
+// WriteHeader intercepts the status code before forwarding it.
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func (app *application) healthcheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "status: available\n")
@@ -83,17 +94,6 @@ client?*/
 
 /*Answer: The deleteBook handler does not write a response body because HTTP 204 No Content
 indicates that the server successfully processed the request, but there is no content to send in the response.*/
-
-type responseWriter struct {
-	http.ResponseWriter     // embed the real writer
-	statusCode          int // captured status code
-}
-
-// WriteHeader intercepts the status code before forwarding it.
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
 
 /* What do time.Now() and time.Since(start) give you together? */
 
