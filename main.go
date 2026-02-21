@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -27,6 +28,61 @@ you pre-set it to http.StatusOK? */
 /*Answer: If a handler calls w.Write() without an explicit call to w.WriteHeader(),
 the client receives a status code of 200 OK. If the pre-set rw.statusCode is set to
 http.StatusOK, it will hold the value 200.*/
+
+func (app *application) healthcheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "status: available\n")
+	app.logger.Info("healthcheck handler called")
+}
+
+func (app *application) listBooks(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "list of books (coming soon)\n")
+	app.logger.Info("listBooks handler called")
+}
+
+func (app *application) getBook(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "get book with id: %s\n", id)
+	app.logger.Info("getBook handler called", "id", id)
+}
+
+func (app *application) createBook(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, "book created (coming soon)\n")
+	app.logger.Info("createBook handler called")
+}
+
+func (app *application) deleteBook(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	w.WriteHeader(http.StatusNoContent)
+	app.logger.Info("deleteBook handler called", "id", id)
+
+	/*Why is app a pointer (&application{}) rather than a value?*/
+
+	/*Answer: app is a pointer to an application struct rather than a value because it allows
+	for more efficient memory usage and easier modification of the struct's fields.
+	Using a pointer means that when we pass app around in our code, we are passing a reference
+	to the same underlying data rather than creating copies of the struct.*/
+
+	/*How does each handler method access the logger — what does the receiver give you?*/
+
+	/*Answer: Each handler method can access the logger through the application struct's receiver.
+	The receiver allows the handler methods to access the fields of the application struct, including the logger.*/
+
+	/*If you later added a second dependency (e.g. a database), where exactly would you add it?*/
+
+	/*Answer: If I later added a second dependency, such as a database, I would add it as a field in the application struct.
+	This way, all dependencies are centralized within the application struct, making it easier to manage and pass around as needed.*/
+
+}
+
+/*Why does deleteBook not write a response body? What does HTTP 204 communicate to the
+client?*/
+
+/*Answer: The deleteBook handler does not write a response body because HTTP 204 No Content
+indicates that the server successfully processed the request, but there is no content to send in the response.*/
 
 type responseWriter struct {
 	http.ResponseWriter     // embed the real writer
@@ -80,41 +136,50 @@ func loggingMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		rw.Write([]byte("ok"))
-		println("Captured Status Code:", rw.statusCode)
-	})
-	logMiddleware := loggingMiddleware(mux)
-
+	// Create a structured logger writing to stdout
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// Inject the logger into the application struct
 	app := &application{
 		logger: logger,
 	}
+	// Register routes with method-qualified patterns (Go 1.22+)
+	mux := http.NewServeMux()
 
-	/*Why is app a pointer (&application{}) rather than a value?*/
+	/*what does the method-qualified pattern "GET /v1/healthcheck" do?*/
 
-	/*Answer: app is a pointer to an application struct rather than a value because it allows
-	for more efficient memory usage and easier modification of the struct's fields.
-	Using a pointer means that when we pass app around in our code, we are passing a reference
-	to the same underlying data rather than creating copies of the struct.*/
+	/*Answer: The method-qualified pattern "GET /v1/healthcheck" specifies that the handler should only be invoked for
+	GET requests to the /v1/healthcheck endpoint. This allows for more precise routing, ensuring that the handler is only
+	called when the correct HTTP method is used*/
 
-	/*How does each handler method access the logger — what does the receiver give you?*/
+	mux.HandleFunc("GET /v1/healthcheck", app.healthcheck)
 
-	/*Answer: Each handler method can access the logger through the application struct's receiver.
-	The receiver allows the handler methods to access the fields of the application struct, including the logger.*/
+	/*what does the method-qualified pattern "GET /v1/books/" do?*/
+	/*Answer: The method-qualified pattern "GET /v1/books/" specifies that the handler should only be invoked for
+	GET requests to the /v1/books/ endpoint. This allows the handler to respond specifically to requests that are
+	intended to list books, ensuring that it is not called for other HTTP methods or endpoints.*/
+	mux.HandleFunc("GET /v1/books", app.listBooks)
 
-	/*If you later added a second dependency (e.g. a database), where exactly would you add it?*/
+	/*what does the method-qualified pattern "GET /v1/books/{id}" do?*/
+	/*Answer: The method-qualified pattern "GET /v1/books/{id}" specifies that the handler should only be invoked for
+	GET requests to the /v1/books/{id} endpoint, where {id} is a placeholder for a variable part of the URL.
+	This allows the handler to extract the id value from the URL and use it to retrieve the specific book information.*/
 
-	/*Answer: If I later added a second dependency, such as a database, I would add it as a field in the application struct.
-	This way, all dependencies are centralized within the application struct, making it easier to manage and pass around as needed.*/
-	err := http.ListenAndServe(":4000", logMiddleware)
-	log.Printf("Server started on http://localhost:4000")
+	mux.HandleFunc("GET /v1/books/{id}", app.getBook)
 
-	if err != nil {
-		panic(err)
-	}
+	/*what does the method-qualified pattern "POST /v1/books" do?*/
+	/*Answer: The method-qualified pattern "POST /v1/books" specifies that the handler should only be invoked for
+	POST requests to the /v1/books endpoint. This allows the handler to respond specifically to requests that are
+	intended to create a new book, ensuring that it is not called for other HTTP methods or endpoints.*/
+	mux.HandleFunc("POST /v1/books", app.createBook)
 
+	/*what does the method-qualified pattern "DELETE /v1/books/{id}" do?*/
+	/*Answer: The method-qualified pattern "DELETE /v1/books/{id}" specifies that the handler should only be invoked for
+	DELETE requests to the /v1/books/{id} endpoint, where {id} is a placeholder for a variable part of the URL.
+	This allows the handler to extract the id value from the URL and use it to delete the specific book information.*/
+	mux.HandleFunc("DELETE /v1/books/{id}", app.deleteBook)
+	// Log a message before the server starts
+	logger.Info("starting server", "addr", ":4000")
+	// Wrap the entire router with logging middleware
+	err := http.ListenAndServe(":4000", loggingMiddleware(mux))
+	log.Fatal(err)
 }
